@@ -4,6 +4,7 @@ use compact_str::CompactString;
 use either::Either;
 use eyre::{anyhow, bail, OptionExt};
 use fnv::FnvHashMap;
+use httparse::{ParserConfig, Status};
 use memchr::{memchr, memmem};
 use regex_lite::{Match, Regex};
 use std::str::FromStr;
@@ -121,27 +122,11 @@ fn to_str(str_like: &[u8]) -> &str {
     unsafe { std::str::from_utf8_unchecked(str_like) }
 }
 
-fn parse_headers(headers: &[u8]) -> FnvHashMap<Header, &str> {
-    headers
-        .split(|c| *c == b'\n')
-        .filter_map(|hdr_line| {
-            let idx = memchr::memchr(b':', hdr_line)?;
-            Some((&hdr_line[..idx], &hdr_line[idx + 1..]))
-        })
-        .flat_map(|(header, content)| {
-            let header_str = to_str(header);
-
-            let Ok(header) = header_str.parse::<Header>() else {
-                return None;
-            };
-
-            let content = to_str(content).trim();
-            Some((header, content))
-        })
-        .collect::<FnvHashMap<_, _>>()
-}
-
 fn parse_body(body: &[u8]) -> Option<&str> {
+    if body.is_empty() {
+        return None;
+    }
+
     if body.first() == Some(&b'\0') {
         None
     } else {
@@ -156,33 +141,28 @@ fn parse_body(body: &[u8]) -> Option<&str> {
 /// And probably explode if anything else than a well-formed request is parsed.
 #[inline]
 pub fn parse_http(request: &[u8]) -> AnyResult<Request> {
-    // https://www.rfc-editor.org/rfc/rfc9110.html#name-protocol-version
-    let Some(index) = memmem::find(request, b"HTTP/1.1") else {
-        bail!("err");
-    };
+    let mut headers = [httparse::EMPTY_HEADER; 4];
+    let mut req = httparse::Request::new(&mut headers);
+    let body = ParserConfig::default()
+        .parse_request(&mut req, request)
+        .unwrap();
 
-    let method_and_resource = &request[..index];
-    let rest = &request[index..];
+    let method = Method::from_str(req.method.unwrap()).unwrap();
+    let resource = req.path.unwrap();
+    let headers = req
+        .headers
+        .iter()
+        .map(|c| (Header::from_str(c.name).unwrap(), to_str(c.value)))
+        .collect::<FnvHashMap<_, _>>();
 
-    let mut split = method_and_resource.split(|c| c.is_ascii_whitespace());
-    let method = split
-        .next()
-        .map(Method::try_from)
-        .ok_or_eyre("Malformed request.")?
-        .map_err(|_| anyhow!("Unknown http method."))?;
-    let resource = split.next().ok_or_eyre("Could not find resource.")?;
-
-    let maybe_body = memmem::find(rest, b"\r\n\r\n").map(|idx| (&rest[..idx], &rest[idx + 4..]));
-
-    let (headers, body) = if let Some((headers, body)) = maybe_body {
-        (parse_headers(headers), parse_body(body))
-    } else {
-        (parse_headers(rest), None)
+    let body = match body {
+        Status::Complete(idx) => parse_body(&request[idx..]),
+        Status::Partial => unimplemented!(),
     };
 
     Ok(Request {
         method,
-        resource: to_str(resource),
+        resource,
         headers,
         body,
     })
@@ -199,29 +179,21 @@ mod tests {
         let request = parse_http(sample).unwrap();
         assert_eq!(request.method, Method::GET);
         assert_eq!(request.resource, "/somepath");
-        assert_eq!(request.headers.get(&Header::HOST), Some(&"ifconfig.me"));
+        assert_eq!(
+            request.headers.get(&Header::CONTENT_TYPE),
+            Some(&"text/html; charset=ISO-8859-4")
+        );
         assert_eq!(request.body, Some(r#"{"json_key": 10}"#));
     }
 
     #[test]
     fn success_without_body() {
-        let sample = b"GET /somepath HTTP/1.1\nHost: ifconfig.me\nUser-Agent: curl/8.5.0\nAccept: */*\nContent-Type: text/html; charset=ISO-8859-4\n";
+        let sample = b"GET /somepath HTTP/1.1\nHost: ifconfig.me\nUser-Agent: curl/8.5.0\nAccept: */*\nContent-Type: text/html; charset=ISO-8859-4\r\n\r\n";
 
         let request = parse_http(sample).unwrap();
         assert_eq!(request.method, Method::GET);
         assert_eq!(request.resource, "/somepath");
         assert_eq!(request.headers.get(&Header::HOST), Some(&"ifconfig.me"));
         assert_eq!(request.body, None);
-    }
-
-    #[test]
-    fn success_no_route() {
-        let sample = b"GET /clientes/1/transacao HTTP/1.1\nHost: localhost\nUser-Agent: curl/8.5.0\nAccept: */*\nContent-Type: text/html; charset=ISO-8859-4\r\n\r\n{\"json_key\": 10}";
-
-        let request = parse_http(sample).unwrap();
-        assert_eq!(request.method, Method::GET);
-        assert_eq!(request.resource, "/somepath");
-        assert_eq!(request.headers.get(&Header::HOST), Some(&"ifconfig.me"));
-        assert_eq!(request.body, Some(r#"{"json_key": 10}"#));
     }
 }

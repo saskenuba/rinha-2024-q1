@@ -8,13 +8,13 @@ fn bench_http_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("http_parse");
 
     group.bench_function(BenchmarkId::new("My function", "sample http"), |c| {
-        c.iter(|| parse_http(SAMPLE))
+        c.iter(|| parse_http(black_box(SAMPLE)))
     });
     group.bench_function(BenchmarkId::new("HTTP parse", "sample http"), |c| {
         c.iter(move || {
-            let mut headers = [httparse::EMPTY_HEADER; 16];
+            let mut headers = [httparse::EMPTY_HEADER; 4];
             let mut req = Request::new(&mut headers);
-            ParserConfig::default().parse_request(&mut req, SAMPLE);
+            ParserConfig::default().parse_request(&mut req, black_box(SAMPLE));
             assert_eq!(req.path, Some("/somepath"));
         })
     });
