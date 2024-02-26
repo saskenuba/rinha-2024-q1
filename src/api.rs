@@ -1,6 +1,7 @@
 use crate::server_impl::response::Response;
-use crate::server_impl::server::{AnyResult, Method, Request};
+use crate::server_impl::server::{AnyResult, Method};
 use eyre::bail;
+use crate::server_impl::request::Request;
 
 pub fn statement_route(req: Request) -> AnyResult<Response> {
     let body = req.body.unwrap();

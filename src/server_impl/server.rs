@@ -1,15 +1,19 @@
-use crate::api::{statement_route, transaction_route};
-use crate::server_impl::response::{Response, StatusCode};
-use compact_str::CompactString;
-use either::Either;
-use eyre::{anyhow, bail, OptionExt};
-use fnv::FnvHashMap;
-use httparse::{ParserConfig, Status};
-use memchr::{memchr, memmem};
-use regex_lite::{Match, Regex};
+use ahash::AHashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
+
+use either::Either;
+use enum_map::{Enum, EnumMap};
+use eyre::OptionExt;
+use fnv::FnvHashMap;
+use httparse::{ParserConfig, Status};
+use memchr::memchr;
+use regex_lite::Regex;
 use strum::{EnumString, IntoStaticStr};
+
+use crate::api::{statement_route, transaction_route};
+use crate::server_impl::request::Request;
+use crate::server_impl::response::{Response, StatusCode};
 
 pub type AnyResult<T> = eyre::Result<T>;
 
@@ -43,7 +47,7 @@ pub fn match_routes(resource: &str, request: Request) -> Either<Response, Respon
 }
 
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Enum)]
 pub enum Header {
     HOST,
     USER_AGENT,
@@ -83,39 +87,9 @@ impl TryFrom<&[u8]> for Method {
     type Error = ();
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let a = unsafe { std::str::from_utf8_unchecked(value) };
+        let a = to_str(value);
         Method::from_str(a).map_err(|_| ())
     }
-}
-
-// impl FromStr for Method {
-//     type Err = ();
-//
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         let res = match s {
-//             "CONNECT" => Self::CONNECT,
-//             "DELETE" => Self::DELETE,
-//             "GET" => Self::GET,
-//             "HEAD" => Self::HEAD,
-//             "POST" => Self::POST,
-//             "PUT" => Self::PUT,
-//             _ => return Err(()),
-//         };
-//
-//         Ok(res)
-//     }
-// }
-
-// this module won't respect much of the HTTP specification
-// it is entirely tailored for the rinha-de-backend tests and don't represent real life.
-// https://www.rfc-editor.org/rfc/rfc9110.html#name-requirements-notation
-
-#[derive(Debug)]
-pub struct Request<'a> {
-    pub method: Method,
-    pub headers: FnvHashMap<Header, &'a str>,
-    pub resource: &'a str,
-    pub body: Option<&'a str>,
 }
 
 fn to_str(str_like: &[u8]) -> &str {
@@ -123,23 +97,17 @@ fn to_str(str_like: &[u8]) -> &str {
 }
 
 fn parse_body(body: &[u8]) -> Option<&str> {
-    if body.is_empty() {
+    if body.is_empty() || body.first() == Some(&b'\0') {
         return None;
     }
 
-    if body.first() == Some(&b'\0') {
-        None
-    } else {
-        let body_content = memchr(b'\0', body).map(|idx| &body[..idx]).unwrap_or(body);
-        // let (body_content, _) = body.split_once(|b| *b == b'\0').unwrap_or((body, &[]));
-        Some(to_str(body_content))
-    }
+    let body_content = memchr(b'\0', body).map(|idx| &body[..idx]).unwrap_or(body);
+    Some(to_str(body_content))
 }
 
 /// Returns a [Request]
 /// Won't handle anything else than a simple request.
 /// And probably explode if anything else than a well-formed request is parsed.
-#[inline]
 pub fn parse_http(request: &[u8]) -> AnyResult<Request> {
     let mut headers = [httparse::EMPTY_HEADER; 4];
     let mut req = httparse::Request::new(&mut headers);
@@ -153,7 +121,7 @@ pub fn parse_http(request: &[u8]) -> AnyResult<Request> {
         .headers
         .iter()
         .map(|c| (Header::from_str(c.name).unwrap(), to_str(c.value)))
-        .collect::<FnvHashMap<_, _>>();
+        .collect::<EnumMap<_, _>>();
 
     let body = match body {
         Status::Complete(idx) => parse_body(&request[idx..]),
@@ -180,8 +148,8 @@ mod tests {
         assert_eq!(request.method, Method::GET);
         assert_eq!(request.resource, "/somepath");
         assert_eq!(
-            request.headers.get(&Header::CONTENT_TYPE),
-            Some(&"text/html; charset=ISO-8859-4")
+            request.headers[Header::CONTENT_TYPE],
+            "text/html; charset=ISO-8859-4"
         );
         assert_eq!(request.body, Some(r#"{"json_key": 10}"#));
     }
@@ -193,7 +161,7 @@ mod tests {
         let request = parse_http(sample).unwrap();
         assert_eq!(request.method, Method::GET);
         assert_eq!(request.resource, "/somepath");
-        assert_eq!(request.headers.get(&Header::HOST), Some(&"ifconfig.me"));
+        assert_eq!(request.headers[Header::HOST], "ifconfig.me");
         assert_eq!(request.body, None);
     }
 }
