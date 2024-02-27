@@ -1,21 +1,18 @@
-use ahash::AHashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
+use crate::AnyResult;
 use either::Either;
 use enum_map::{Enum, EnumMap};
-use eyre::OptionExt;
-use fnv::FnvHashMap;
 use httparse::{ParserConfig, Status};
 use memchr::memchr;
 use regex_lite::Regex;
 use strum::{EnumString, IntoStaticStr};
 
 use crate::api::{statement_route, transaction_route};
-use crate::server_impl::request::Request;
-use crate::server_impl::response::{Response, StatusCode};
-
-pub type AnyResult<T> = eyre::Result<T>;
+use crate::application::ServerData;
+use crate::infrastructure::server_impl::request::Request;
+use crate::infrastructure::server_impl::response::{Response, StatusCode};
 
 static ROUTER: OnceLock<Regex> = OnceLock::new();
 
@@ -23,27 +20,23 @@ pub fn get_router() -> &'static Regex {
     ROUTER.get_or_init(|| Regex::new(r#"clientes/(\d)/(transacoes|extrato)"#).unwrap())
 }
 
-pub fn process_server_request(buffer: &mut [u8], read_bytes: usize) -> AnyResult<Request> {
-    let request = parse_http(buffer)?;
-
-    // let a = match_routes(request.resource.as_str(), request);
-
-    todo!()
-}
-
-pub fn match_routes(resource: &str, request: Request) -> Either<Response, Response> {
-    let Some(route) = get_router().captures(resource) else {
+pub fn match_routes(server_data: &ServerData, request: Request) -> Either<Response, Response> {
+    let Some(route) = get_router().captures(request.resource) else {
         return Either::Right(StatusCode::NotFound.into());
     };
+    let client_id = route
+        .get(1)
+        .and_then(|c| i32::from_str(c.as_str()).ok())
+        .unwrap();
 
     // the fastest router in existence!
     let response = match route.get(2).map(|c| c.as_str()).unwrap() {
-        "transacao" => statement_route(request),
-        "extrato" => transaction_route(request),
+        "extrato" => statement_route(server_data, request, client_id),
+        "transacao" => transaction_route(server_data, request, client_id),
         _ => unreachable!(),
     };
 
-    todo!()
+    Either::Left(response.unwrap())
 }
 
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
@@ -54,6 +47,7 @@ pub enum Header {
     ACCEPT,
     CONTENT_TYPE,
     CONTENT_LENGTH,
+    KEEP_ALIVE,
 }
 
 impl FromStr for Header {
@@ -66,12 +60,14 @@ impl FromStr for Header {
             "Accept" => Self::ACCEPT,
             "Content-Type" => Self::CONTENT_TYPE,
             "Content-Length" => Self::CONTENT_LENGTH,
+            "Keep-Alive" => Self::KEEP_ALIVE,
             _ => return Err(()),
         };
 
         Ok(res)
     }
 }
+
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
 #[derive(Debug, Copy, Clone, PartialEq, EnumString, IntoStaticStr)]
 pub enum Method {

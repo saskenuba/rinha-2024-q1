@@ -1,9 +1,9 @@
-use crate::server_impl::server::Header;
+use crate::infrastructure::server_impl::server::Header;
 use bytes::Bytes;
 use compact_str::CompactString;
 use fnv::FnvHashMap;
+use serde::Serialize;
 use std::fmt::Write;
-use std::str::FromStr;
 use strum::{EnumMessage, EnumString, IntoStaticStr};
 
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
@@ -36,17 +36,40 @@ impl From<StatusCode> for Response {
 
 impl Response {
     pub fn into_http(self) -> Bytes {
-        let mut buf = String::new();
+        // FIXME: use BufWriter to avoid calling write multiple times
+        let mut buf = String::with_capacity(80);
         let status_code: &str = self.status_code.into();
         let status_message = self.status_code.get_message().unwrap();
+
         write!(
             buf,
-            "HTTP/1.1 {status_code} {status_message}\n\
-            Content-Type: application/json; charset-utf-8\
-            Connection: keep-alive"
+            "HTTP/1.1 {status_code} {status_message}\r\n\
+            Content-Type: application/json; charset-utf-8\r\n\
+            Connection: keep-alive\r\n"
         )
         .expect("No reason to fail.");
 
+        if let Some(body) = self.body {
+            let length = body.len();
+            write!(buf, "Content-Length: {length}\r\n\r\n{body}").unwrap();
+        }
+
         buf.into()
+    }
+}
+
+#[derive(Debug)]
+pub struct JsonResponse(pub(crate) Response);
+
+impl JsonResponse {
+    pub fn from<T>(body: T) -> Self
+    where
+        T: Serialize,
+    {
+        let mut response = Response::from(StatusCode::Ok);
+        let body = simd_json::to_string(&body).ok();
+        println!("body: {:?}", body);
+        response.body = body;
+        Self(response)
     }
 }

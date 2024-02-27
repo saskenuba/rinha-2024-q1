@@ -1,4 +1,4 @@
-use crate::server_impl::server::AnyResult;
+use crate::AnyResult;
 use compact_str::CompactString;
 use eyre::bail;
 use serde::Serialize;

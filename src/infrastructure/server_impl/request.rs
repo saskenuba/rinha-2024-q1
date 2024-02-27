@@ -1,5 +1,4 @@
-use crate::server_impl::server::{Header, Method};
-use ahash::AHashMap;
+use crate::infrastructure::server_impl::server::{Header, Method};
 use enum_map::EnumMap;
 
 #[derive(Debug)]
