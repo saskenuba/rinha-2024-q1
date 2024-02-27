@@ -1,0 +1,67 @@
+version: "3.5"
+name: "rinha-de-backend"
+
+volumes:
+  postgres-storage:
+
+services:
+
+  load-balancer:
+    image: nginx:latest
+    hostname: nginx
+    volumes:
+      - config/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - sv-01
+      - sv-02
+    privileged: true
+    ports:
+      - "9999:9999"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: "50MB"
+
+  sv-01: &server-base
+    build: .
+    expose:
+      - "80"
+    volumes:
+      - postgres-storage:/var/run/postgresql
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "50MB"
+
+  sv-02:
+    <<: *server-base
+
+  db:
+    image: postgres:latest
+    hostname: db
+    environment:
+      POSTGRES_USER: rinha
+      POSTGRES_PASSWORD: inha
+      POSTGRES_DB: rinhadb
+    ports:
+      - "12345:5432"
+    volumes:
+      - postgres-storage:/var/run/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.8"
+          memory: "400mb"
+
+networks:
+  default:
+    driver: bridge
+    name: rinha-proxy
