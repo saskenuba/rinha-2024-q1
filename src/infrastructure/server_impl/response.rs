@@ -1,6 +1,7 @@
 use crate::infrastructure::server_impl::server::Header;
 use bytes::Bytes;
 use compact_str::CompactString;
+use derive_more::Deref;
 use fnv::FnvHashMap;
 use serde::Serialize;
 use std::fmt::Write;
@@ -24,12 +25,12 @@ pub struct Response {
     pub body: Option<String>,
 }
 
-impl From<StatusCode> for Response {
-    fn from(value: StatusCode) -> Self {
+impl Response {
+    pub fn from_status_code(value: StatusCode, body: impl Into<Option<String>>) -> Self {
         Self {
             headers: Default::default(),
             status_code: value,
-            body: None,
+            body: body.into(),
         }
     }
 }
@@ -44,31 +45,37 @@ impl Response {
         write!(
             buf,
             "HTTP/1.1 {status_code} {status_message}\r\n\
-            Content-Type: application/json; charset-utf-8\r\n\
-            Connection: keep-alive\r\n"
+             Server: localhost\r\n"
         )
         .expect("No reason to fail.");
 
         if let Some(body) = self.body {
             let length = body.len();
-            write!(buf, "Content-Length: {length}\r\n\r\n{body}").unwrap();
+            write!(
+                buf,
+                "Connection: keep-alive\r\n\
+                 Content-Type: application/json; charset-utf-8\r\n\
+                 Content-Length: {length}\r\n\r\n{body}"
+            )
+            .unwrap();
+        } else {
+            write!(buf, "Connection: close\r\n").unwrap();
         }
 
         buf.into()
     }
 }
 
-#[derive(Debug)]
-pub struct JsonResponse(pub(crate) Response);
+#[derive(Debug, Deref)]
+pub struct JsonResponse(pub Response);
 
 impl JsonResponse {
     pub fn from<T>(body: T) -> Self
     where
         T: Serialize,
     {
-        let mut response = Response::from(StatusCode::Ok);
+        let mut response = Response::from_status_code(StatusCode::Ok, None);
         let body = simd_json::to_string(&body).ok();
-        println!("body: {:?}", body);
         response.body = body;
         Self(response)
     }
