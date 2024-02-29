@@ -7,7 +7,7 @@ use enum_map::{Enum, EnumMap};
 use httparse::{ParserConfig, Status};
 use memchr::memchr;
 use regex_lite::Regex;
-use strum::{EnumString, IntoStaticStr};
+use strum::{EnumDiscriminants, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
 use crate::api::{statement_route, transaction_route};
 use crate::application::ServerData;
@@ -51,16 +51,22 @@ pub async fn match_routes(
 }
 
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Enum)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Enum, IntoStaticStr, EnumIter)]
 #[non_exhaustive]
 pub enum Header {
+    #[strum(serialize = "accept")]
     ACCEPT,
+    #[strum(serialize = "accept-encoding")]
     ACCEPT_ENCODING,
+    #[strum(serialize = "content-length")]
     CONTENT_LENGTH,
+    #[strum(serialize = "content-type")]
     CONTENT_TYPE,
+    #[strum(serialize = "connection")]
     CONNECTION,
+    #[strum(serialize = "host")]
     HOST,
-    KEEP_ALIVE,
+    #[strum(serialize = "user-agent")]
     USER_AGENT,
 }
 
@@ -68,18 +74,7 @@ impl FromStr for Header {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let res = match s.to_lowercase().as_str() {
-            "accept" => Self::ACCEPT,
-            "accept-encoding" => Self::ACCEPT_ENCODING,
-            "content-length" => Self::CONTENT_LENGTH,
-            "content-type" => Self::CONTENT_TYPE,
-            "host" => Self::HOST,
-            "connection" => Self::CONNECTION,
-            "user-agent" => Self::USER_AGENT,
-            _ => return Err(()),
-        };
-
-        Ok(res)
+        Self::iter().find(|c| unicase::eq(c.into(), s)).ok_or(())
     }
 }
 
