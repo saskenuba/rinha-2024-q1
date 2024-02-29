@@ -1,4 +1,6 @@
-use redis::Client;
+pub mod adapters;
+
+use deadpool_postgres::Pool;
 use std::sync::Arc;
 
 #[derive(Copy, Clone, Debug)]
@@ -12,7 +14,8 @@ impl AccountService {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ServerData {
-    pub redis: Arc<Client>,
+    pub re_conn: redis::aio::ConnectionManager,
+    pub pg_pool: Pool,
 }

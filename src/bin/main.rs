@@ -1,21 +1,53 @@
+use deadpool_postgres::{ManagerConfig, Pool, RecyclingMethod, Runtime};
+use listenfd::ListenFd;
 use redis::Client;
 use rinha_de_backend::application::ServerData;
 use rinha_de_backend::infrastructure::server_impl::server::{match_routes, parse_http};
-use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, UnixListener};
+use tokio_postgres::NoTls;
 
 #[tokio::main]
 async fn main() {
     run().await
 }
 
+async fn setup_pgsql() -> Pool {
+    let mut cfg = deadpool_postgres::Config::new();
+    cfg.dbname = Some("rinhabackend".to_string());
+    cfg.host = Some("localhost".to_string());
+    cfg.user = Some("postgres".to_string());
+    // cfg.password = "inha";
+    cfg.manager = Some(ManagerConfig {
+        recycling_method: RecyclingMethod::Fast,
+    });
+
+    cfg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap()
+}
+
 async fn run() {
-    let socket = TcpListener::bind("0.0.0.0:1337").await.unwrap();
-    let redis = Client::open("redis://0.0.0.0:1000").unwrap();
-    let data = ServerData {
-        redis: Arc::new(redis),
+    let mut listenfd = ListenFd::from_env();
+    let socket = if let Some(listener) = listenfd.take_tcp_listener(0).unwrap() {
+        listener.set_nonblocking(true).unwrap();
+        // UnixListener::from_std(listener).unwrap()
+        TcpListener::from_std(listener).unwrap()
+    } else {
+        TcpListener::bind("localhost:1337").await.unwrap()
     };
+
+    let re_conn =
+        redis::aio::ConnectionManager::new(Client::open("redis://localhost:6379").unwrap())
+            .await
+            .unwrap();
+
+    let pg_pool = setup_pgsql().await;
+
+    let data = ServerData {
+        re_conn: re_conn,
+        pg_pool: pg_pool,
+    };
+
+    println!("Server is running!");
 
     loop {
         let (mut socket, other) = socket.accept().await.unwrap();
@@ -38,18 +70,14 @@ async fn run() {
                     return;
                 }
 
-                eprintln!("one request, read bytes: {}", read_bytes);
-
                 let request = parse_http(&buf).unwrap();
-                let response = match_routes(&data, request);
-
-                socket
-                    .write_all(&response.left().unwrap().into_http())
-                    .await
-                    .unwrap();
-
-                // shutdown connections immediately since gatling doesn't have keep-alive connection by default
-                // socket.shutdown().await.unwrap();
+                let response = match_routes(&data, request).await;
+                let response = if response.is_left() {
+                    response.unwrap_left()
+                } else {
+                    response.unwrap_right()
+                };
+                socket.write_all(&response.into_http()).await.unwrap();
             }
         });
     }
