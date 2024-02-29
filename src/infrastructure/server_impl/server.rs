@@ -20,9 +20,15 @@ pub fn get_router() -> &'static Regex {
     ROUTER.get_or_init(|| Regex::new(r#"clientes/(\d)/(transacoes|extrato)"#).unwrap())
 }
 
-pub fn match_routes(server_data: &ServerData, request: Request) -> Either<Response, Response> {
+pub async fn match_routes(
+    server_data: &ServerData,
+    request: Request<'_>,
+) -> Either<Response, Response> {
     let Some(route) = get_router().captures(request.resource) else {
-        return Either::Right(StatusCode::NotFound.into());
+        return Either::Right(Response::from_status_code(
+            StatusCode::NotFound,
+            "route error".to_string(),
+        ));
     };
     let client_id = route
         .get(1)
@@ -31,9 +37,14 @@ pub fn match_routes(server_data: &ServerData, request: Request) -> Either<Respon
 
     // the fastest router in existence!
     let response = match route.get(2).map(|c| c.as_str()).unwrap() {
-        "extrato" => statement_route(server_data, request, client_id),
-        "transacao" => transaction_route(server_data, request, client_id),
-        _ => unreachable!(),
+        "extrato" => statement_route(server_data, request, client_id).await,
+        "transacoes" => transaction_route(server_data, request, client_id).await,
+        _ => {
+            return Either::Right(Response::from_status_code(
+                StatusCode::NotFound,
+                "route not found".to_string(),
+            ))
+        }
     };
 
     Either::Left(response.unwrap())
@@ -41,26 +52,30 @@ pub fn match_routes(server_data: &ServerData, request: Request) -> Either<Respon
 
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Enum)]
+#[non_exhaustive]
 pub enum Header {
-    HOST,
-    USER_AGENT,
     ACCEPT,
-    CONTENT_TYPE,
+    ACCEPT_ENCODING,
     CONTENT_LENGTH,
+    CONTENT_TYPE,
+    CONNECTION,
+    HOST,
     KEEP_ALIVE,
+    USER_AGENT,
 }
 
 impl FromStr for Header {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let res = match s {
-            "Host" => Self::HOST,
-            "User-Agent" => Self::USER_AGENT,
-            "Accept" => Self::ACCEPT,
-            "Content-Type" => Self::CONTENT_TYPE,
-            "Content-Length" => Self::CONTENT_LENGTH,
-            "Keep-Alive" => Self::KEEP_ALIVE,
+        let res = match s.to_lowercase().as_str() {
+            "accept" => Self::ACCEPT,
+            "accept-encoding" => Self::ACCEPT_ENCODING,
+            "content-length" => Self::CONTENT_LENGTH,
+            "content-type" => Self::CONTENT_TYPE,
+            "host" => Self::HOST,
+            "connection" => Self::CONNECTION,
+            "user-agent" => Self::USER_AGENT,
             _ => return Err(()),
         };
 
