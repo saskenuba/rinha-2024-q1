@@ -6,5 +6,5 @@ pub struct Request<'a> {
     pub method: Method,
     pub headers: EnumMap<Header, &'a str>,
     pub resource: &'a str,
-    pub body: Option<&'a str>,
+    pub body: Option<&'a [u8]>,
 }

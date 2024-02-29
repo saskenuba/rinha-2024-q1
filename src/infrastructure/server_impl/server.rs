@@ -107,13 +107,13 @@ fn to_str(str_like: &[u8]) -> &str {
     unsafe { std::str::from_utf8_unchecked(str_like) }
 }
 
-fn parse_body(body: &[u8]) -> Option<&str> {
+fn parse_body(body: &[u8]) -> Option<&[u8]> {
     if body.is_empty() || body.first() == Some(&b'\0') {
         return None;
     }
 
     let body_content = memchr(b'\0', body).map(|idx| &body[..idx]).unwrap_or(body);
-    Some(to_str(body_content))
+    Some(body_content)
 }
 
 /// Returns a [Request]
@@ -128,10 +128,11 @@ pub fn parse_http(request: &[u8]) -> AnyResult<Request> {
 
     let method = Method::from_str(req.method.unwrap()).unwrap();
     let resource = req.path.unwrap();
+
     let headers = req
         .headers
         .iter()
-        .map(|c| (Header::from_str(c.name).unwrap(), to_str(c.value)))
+        .filter_map(|c| Header::from_str(c.name).ok().map(|h| (h, to_str(c.value))))
         .collect::<EnumMap<_, _>>();
 
     let body = match body {
@@ -162,7 +163,7 @@ mod tests {
             request.headers[Header::CONTENT_TYPE],
             "text/html; charset=ISO-8859-4"
         );
-        assert_eq!(request.body, Some(r#"{"json_key": 10}"#));
+        assert_eq!(to_str(request.body.unwrap()), r#"{"json_key": 10}"#);
     }
 
     #[test]
