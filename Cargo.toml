@@ -6,22 +6,28 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bitcode = { version = "0.5.1", features = ["serde"] }
 bytes = "^1.5"
+derive_more = { version = "1.0.0-beta.6", features = ["deref"] }
 either = "1.10.0"
 eyre = "0.6.12"
-futures-util = "0.3.30"
+fastrand = "2"
 futures = "0.3.30"
+futures-util = "0.3.30"
+listenfd = "^1"
 regex-lite = "0.1"
 strum = { version = "0.26", features = ["derive"] }
-time = { version = "^0.3", features = ["serde"] }
+time = { version = "^0.3", features = ["serde", "formatting"] }
 tokio = { version = "^1", features = ["full"] }
-fastrand = "2"
 
 # databasey
+deadpool-postgres = "^0.12"
 redis = { version = "0.24", features = ["ahash", "tokio-comp", "connection-manager"] }
+tokio-postgres = "^0.7"
 
 # json-parsing
 serde = { version = "^1", features = ["derive"] }
+serde_json = "1"
 simd-json = { version = "0.13.8", features = ["serde_impl"] }
 
 # optimization
@@ -31,6 +37,7 @@ enum-map = "3.0.0-beta.2"
 fnv = "^1"
 httparse = "1.8"
 memchr = "^2"
+drop_bomb = "0.1.5"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -38,3 +45,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "http_parse"
 harness = false
+
+[profile.release]
+debug = true
+strip = false
