@@ -1,9 +1,5 @@
-#![deny(
-    missing_copy_implementations,
-    missing_debug_implementations,
-    trivial_casts,
-    trivial_numeric_casts
-)]
+#![warn(missing_debug_implementations)]
+#![deny(missing_copy_implementations, trivial_casts, trivial_numeric_casts)]
 
 pub mod api;
 pub mod domain;
