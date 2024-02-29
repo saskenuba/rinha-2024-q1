@@ -34,14 +34,17 @@ impl TransactionDescription {
 
 impl Transaction {
     #[cfg(test)]
-    pub fn generate(amount: i32) -> Self {
+    pub fn generate<T>(amount: i32, description: T) -> Self
+    where
+        T: Into<Option<&'static str>>,
+    {
         let kind = if amount.is_negative() {
             TransactionKind::Debit
         } else {
             TransactionKind::Credit
         };
 
-        let description = TransactionDescription::new("xxx");
+        let description = TransactionDescription::new(description.into().unwrap_or("xxx"));
         Self {
             valor: NonZeroI32::new(amount).expect("Safe to unwrap"),
             tipo: kind,

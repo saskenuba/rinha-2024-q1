@@ -15,7 +15,7 @@ impl Account {
     fn generate(balance: i32, limit: u32) -> Account {
         Account {
             id: -1,
-            transactions: vec![Transaction::generate(balance)],
+            transactions: vec![Transaction::generate(balance, None)],
             credit_limit: limit,
         }
     }
@@ -48,16 +48,17 @@ mod tests {
     fn failure_more_funds() {
         let account = Account::generate(1_000, 10_000);
         let with_new_transaction = account
-            .add_transaction(Transaction::generate(-1000))
+            .add_transaction(Transaction::generate(-1000, None))
             .unwrap();
         assert_eq!(with_new_transaction.balance(), 0);
 
         let with_new_transaction = with_new_transaction
-            .add_transaction(Transaction::generate(-10_000))
+            .add_transaction(Transaction::generate(-10_000, None))
             .unwrap();
         assert_eq!(with_new_transaction.balance(), -10_000);
 
-        let with_new_transaction = with_new_transaction.add_transaction(Transaction::generate(-1));
+        let with_new_transaction =
+            with_new_transaction.add_transaction(Transaction::generate(-1, None));
         match with_new_transaction {
             Err(AccountError::InsufficientCredit) => {}
             _ => unreachable!(),
