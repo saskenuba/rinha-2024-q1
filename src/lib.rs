@@ -7,14 +7,14 @@ pub mod domain;
 pub mod application;
 pub mod infrastructure;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use time::OffsetDateTime;
 
-#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, Deserialize)]
 pub struct Statement {
-    pub total: i32,
-    pub data_extrato: OffsetDateTime,
-    pub limite: u32,
+    pub balance: i32,
+    pub time_of_statement: OffsetDateTime,
+    pub credit_limit: u32,
 }
 
 pub type AnyResult<T> = eyre::Result<T>;

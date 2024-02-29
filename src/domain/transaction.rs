@@ -1,11 +1,11 @@
 use crate::AnyResult;
 use compact_str::CompactString;
 use eyre::bail;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::num::NonZeroI32;
 use time::OffsetDateTime;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Transaction {
     pub valor: NonZeroI32,
     pub tipo: TransactionKind,
@@ -13,14 +13,14 @@ pub struct Transaction {
     pub realizada_em: OffsetDateTime,
 }
 
-#[derive(Debug, Copy, Clone, Serialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TransactionKind {
     Credit,
     Debit,
 }
 
-#[derive(Serialize, Debug, PartialEq, Eq)]
-pub struct TransactionDescription(CompactString);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct TransactionDescription(pub CompactString);
 
 impl TransactionDescription {
     pub fn new(description: &str) -> AnyResult<Self> {
