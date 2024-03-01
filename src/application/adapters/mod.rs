@@ -1,5 +1,5 @@
+use crate::domain::account::Account;
 use crate::domain::transaction::{Transaction, TransactionDescription, TransactionKind};
-use crate::Statement;
 use compact_str::{CompactString, ToCompactString};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -10,6 +10,15 @@ use time::OffsetDateTime;
 #[allow(non_camel_case_types)]
 #[derive(Debug, Serialize)]
 pub struct StatementDTO {
+    #[serde(rename = "saldo")]
+    saldo: SaldoDTO,
+    #[serde(rename = "ultimas_transacoes")]
+    transactions: Vec<TransactionDTO<'static>>,
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Serialize)]
+pub struct SaldoDTO {
     #[serde(rename = "total")]
     total_balance: i32,
     #[serde(rename = "data_extrato")]
@@ -17,19 +26,25 @@ pub struct StatementDTO {
     #[serde(rename = "limite")]
     credit_limit: u32,
 }
-
-impl From<Statement> for StatementDTO {
-    fn from(value: Statement) -> Self {
-        let formatted = value
-            .time_of_statement
+impl StatementDTO {
+    pub fn from_other(value: (Account, impl Iterator<Item = Transaction>)) -> Self {
+        let formatted = OffsetDateTime::now_utc()
             .format(&Iso8601::DEFAULT)
             .unwrap()
             .to_compact_string();
 
+        let acc = value.0;
+        let transactions = value.1;
         Self {
-            total_balance: value.balance,
-            data_extrato: formatted,
-            credit_limit: value.credit_limit,
+            saldo: SaldoDTO {
+                total_balance: acc.balance,
+                data_extrato: formatted,
+                credit_limit: acc.credit_limit,
+            },
+            transactions: transactions
+                .into_iter()
+                .map(TransactionDTO::from)
+                .collect::<Vec<_>>(),
         }
     }
 }
@@ -59,11 +74,15 @@ impl TryFrom<TransactionDTO<'_>> for Transaction {
             _ => return Err(()),
         };
 
-        let description = TransactionDescription::new(&value.description).map_err(|e| {
+        let description = TransactionDescription::new(&value.description).map_err(|_| {
             eprintln!("desc error");
-            ()
         })?;
-        let amount = NonZeroI32::new(value.amount).ok_or(())?;
+
+        let amount = if matches!(kind, TransactionKind::Debit) {
+            NonZeroI32::new(-value.amount).ok_or(())?
+        } else {
+            NonZeroI32::new(value.amount).ok_or(())?
+        };
 
         Ok(Self {
             valor: amount,
@@ -82,7 +101,7 @@ impl From<Transaction> for TransactionDTO<'_> {
         };
 
         let description = value.descricao.0.into();
-        let amount = i32::from(value.valor);
+        let amount = i32::from(value.valor.abs());
         let created_on = Some(value.realizada_em.format(&Iso8601::DEFAULT).unwrap().into());
 
         Self {

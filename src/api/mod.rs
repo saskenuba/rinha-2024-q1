@@ -1,19 +1,16 @@
 use crate::application::adapters::{StatementDTO, TransactionDTO};
+use crate::application::cache::AccountCache;
+use crate::application::repositories::TransactionRepository;
 use crate::application::ServerData;
+use crate::domain::account::Account;
 use crate::domain::transaction::Transaction;
-use crate::infrastructure::redis_lock::RedisLock;
 use crate::infrastructure::server_impl::request::Request;
 use crate::infrastructure::server_impl::response::{JsonResponse, Response, StatusCode};
 use crate::infrastructure::server_impl::server::Method;
-use crate::{AnyResult, Statement};
-use compact_str::CompactString;
+use crate::AnyResult;
 use eyre::bail;
-use redis::streams::StreamRangeReply;
-use redis::{AsyncCommands, Client, Value};
-use serde::{Deserialize, Serialize};
-use std::mem;
-use std::sync::Arc;
-use time::OffsetDateTime;
+use fnv::FnvHashMap;
+use std::sync::{Arc, Mutex};
 
 pub mod input_types;
 
@@ -28,13 +25,16 @@ pub async fn statement_route(
         bail!("Only GET available.")
     }
 
-    let my = Statement {
-        balance: 0,
-        time_of_statement: OffsetDateTime::now_utc(),
-        credit_limit: 0,
+    let service = BankAccountService {
+        re_conn: server_data.re_conn.clone(),
+        pg_conn: server_data.pg_pool.clone(),
     };
 
-    let a = JsonResponse::from::<StatementDTO>(my.into());
+    let res = service
+        .query(AccountQueries::Statement { account: client_id })
+        .await;
+
+    let a = JsonResponse::from::<StatementDTO>(StatementDTO::from_other(res));
     Ok(a.0)
 }
 
@@ -54,7 +54,7 @@ pub async fn transaction_route(
         .unwrap();
 
     let mapping = serde_json::from_slice::<TransactionDTO>(body)
-        .map_err(|e| ())
+        .map_err(|_| ())
         .and_then(|c| c.try_into());
 
     let transaction: Transaction = match mapping {
@@ -83,47 +83,66 @@ pub async fn transaction_route(
     //              -> insert transaction and balance on redis
     //              -> remove lock
 
-    let command = AccountCommands::WithdrawMoney {
+    let command = AccountCommands::HandleMoney {
         account: client_id,
-        transaction: &transaction,
+        transaction,
     };
 
-    let res = BankAccountService {
+    let bank_service = BankAccountService {
         re_conn: server_data.re_conn.clone(),
         pg_conn: server_data.pg_pool.clone(),
-    }
-    .handler(command)
-    .await;
+    };
+    let res = bank_service.handler(command).await;
 
-    let a = JsonResponse::from::<TransactionDTO>(transaction.into());
+    // if res.is_err() {
+    //     return Ok(Response::from_status_code(
+    //         StatusCode::UnprocessableEntity,
+    //         None,
+    //     ));
+    // }
+
+    let a =
+        JsonResponse::from::<TransactionDTO>(TransactionDTO::from(Transaction::generate(1, None)));
     Ok(a.0)
 }
+
+pub type AccountMapStorage = Arc<FnvHashMap<i32, (u32, Mutex<Account>)>>;
 
 struct BankAccountService {
     re_conn: redis::aio::ConnectionManager,
     pg_conn: deadpool_postgres::Pool,
+    // storage: AccountMapStorage,
 }
 
-enum AccountCommands<'a> {
-    DepositMoney {
-        user: i32,
-        amount: &'a Transaction,
-    },
-    WithdrawMoney {
+#[derive(Debug)]
+enum AccountCommands {
+    HandleMoney {
         account: i32,
-        transaction: &'a Transaction,
+        transaction: Transaction,
     },
 }
 
+#[derive(Debug)]
 enum AccountQueries {
-    Statement,
+    Statement { account: i32 },
 }
 
 impl BankAccountService {
-    async fn handler(&self, command: AccountCommands<'_>) {
+    async fn query(&self, command: AccountQueries) -> (Account, impl Iterator<Item = Transaction>) {
         match command {
-            AccountCommands::DepositMoney { .. } => unimplemented!(),
-            AccountCommands::WithdrawMoney {
+            AccountQueries::Statement { account: user } => {
+                let trans_cache = AccountCache {
+                    re_conn: self.re_conn.clone(),
+                };
+
+                let res = trans_cache.get_account(user, true).await;
+                (res.0, res.1.unwrap())
+            }
+        }
+    }
+    async fn handler(&self, command: AccountCommands) -> AnyResult<()> {
+        match command {
+            AccountCommands::HandleMoney {
                 account: user,
                 transaction,
             } => {
@@ -131,21 +150,11 @@ impl BankAccountService {
                     conn: self.pg_conn.clone(),
                 };
 
-                let trans_cache = TransactionCache {
+                let trans_cache = AccountCache {
                     re_conn: self.re_conn.clone(),
                 };
 
-                let redis_lock = RedisLock::new(self.re_conn.clone(), user, 100);
-                {
-                    let guard = redis_lock.acquire().await.unwrap();
-                    trans_repo.save_transaction(user, transaction).await;
-                    trans_cache.append(user, transaction).await;
-                    guard.release().await;
-                }
-            }
-        }
-    }
-}
+                // let redis_lock = RedisLock::new(self.re_conn.clone(), user, 100);
 
                 let (acc, _) = trans_cache.get_account(user, false).await;
                 let acc = acc
