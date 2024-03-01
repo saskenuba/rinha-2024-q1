@@ -1,41 +1,45 @@
 use crate::domain::errors::AccountError;
 use crate::domain::transaction::Transaction;
+use serde::{Deserialize, Serialize};
 
 /// Aggregate
 ///
 /// Don't store the balance on the aggregate you dummkopf!
-struct Account {
-    id: i32,
-    transactions: Vec<Transaction>,
-    credit_limit: u32,
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Account {
+    pub id: i32,
+    pub balance: i32,
+    pub credit_limit: u32,
 }
 
 impl Account {
+    pub fn new(id: i32, credit_limit: u32) -> Self {
+        Self {
+            id,
+            balance: 0,
+            credit_limit,
+        }
+    }
+
     #[cfg(test)]
     fn generate(balance: i32, limit: u32) -> Account {
         Account {
             id: -1,
-            transactions: vec![Transaction::generate(balance, None)],
+            balance,
             credit_limit: limit,
         }
     }
 
-    /// Returns the balance based on all user transactions.
-    fn balance(&self) -> i32 {
-        self.transactions.iter().map(|c| i32::from(c.valor)).sum()
-    }
-
     /// Returns [Account] with the new transaction.
-    fn add_transaction(mut self, transaction: Transaction) -> Result<Self, AccountError> {
-        let balance = self.balance();
+    pub fn add_transaction(mut self, transaction: &Transaction) -> Result<Self, AccountError> {
         let transaction_amount = transaction.valor;
-        let new_balance = balance + i32::from(transaction_amount);
+        let new_balance = self.balance + i32::from(transaction_amount);
 
         if new_balance.is_negative() && new_balance.abs() > self.credit_limit as i32 {
             return Err(AccountError::InsufficientCredit);
         }
 
-        self.transactions.push(transaction);
+        self.balance = new_balance;
         Ok(self)
     }
 }
@@ -47,18 +51,20 @@ mod tests {
     #[test]
     fn failure_more_funds() {
         let account = Account::generate(1_000, 10_000);
+        assert_eq!(account.balance, 1_000);
+
         let with_new_transaction = account
-            .add_transaction(Transaction::generate(-1000, None))
+            .add_transaction(&Transaction::generate(-1000, None))
             .unwrap();
-        assert_eq!(with_new_transaction.balance(), 0);
+        assert_eq!(with_new_transaction.balance, 0);
 
         let with_new_transaction = with_new_transaction
-            .add_transaction(Transaction::generate(-10_000, None))
+            .add_transaction(&Transaction::generate(-10_000, None))
             .unwrap();
-        assert_eq!(with_new_transaction.balance(), -10_000);
+        assert_eq!(with_new_transaction.balance, -10_000);
 
         let with_new_transaction =
-            with_new_transaction.add_transaction(Transaction::generate(-1, None));
+            with_new_transaction.add_transaction(&Transaction::generate(-1, None));
         match with_new_transaction {
             Err(AccountError::InsufficientCredit) => {}
             _ => unreachable!(),
