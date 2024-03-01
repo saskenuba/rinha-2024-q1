@@ -1,9 +1,7 @@
 use compact_str::CompactString;
 use drop_bomb::DropBomb;
 use redis::aio::{ConnectionLike, ConnectionManager};
-use redis::{
-    AsyncCommands, Client, Commands, ExistenceCheck, RedisResult, SetExpiry, SetOptions, Value,
-};
+use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions, Value};
 use std::iter::repeat_with;
 
 #[derive(Clone)]
@@ -73,7 +71,7 @@ async fn lock(
 ) -> bool {
     let options = SetOptions::default()
         .conditional_set(ExistenceCheck::NX)
-        .with_expiration(SetExpiry::PX(10000));
+        .with_expiration(SetExpiry::PX(ttl));
 
     let res = redis
         .set_options::<_, _, Value>(resource, val, options)
