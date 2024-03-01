@@ -38,9 +38,14 @@ fnv = "^1"
 drop_bomb = "0.1.5"
 mimalloc = { version = "0.1", default-features = false }
 
+# server impl
+http = "1"
 httparse = "1.8"
 memchr = "^2"
-drop_bomb = "0.1.5"
+unicase = "2.7.0"
+
+# other
+console-subscriber = "0.2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
