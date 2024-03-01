@@ -147,84 +147,22 @@ impl BankAccountService {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Statementredis {
-    balance: i32,
-    transactions: Vec<Transaction>,
-}
+                let (acc, _) = trans_cache.get_account(user, false).await;
+                let acc = acc
+                    .add_transaction(&transaction)
+                    .or_else(|_| bail!("no credits bro"))?;
 
-struct TransactionRepository {
-    conn: deadpool_postgres::Pool,
-}
-
-impl TransactionRepository {
-    async fn save_transaction(&self, user_id: i32, transaction: &Transaction) {
-        let conn = self.conn.get().await.unwrap();
-
-        let query = r#"
-          WITH insertion
-           AS (INSERT INTO transaction (amount, description, account_id) VALUES ($1, $2, $3) 
-               RETURNING account_id, amount )
-  SELECT rb.account_id, running_balance + i.amount
-  FROM running_balance rb
-       INNER JOIN insertion i ON rb.account_id = i.account_id;"#;
-        let stmt = conn.prepare_cached(query).await.unwrap();
-
-        let desc = transaction.descricao.0.as_str();
-        let amount = transaction.valor;
-
-        let res = conn
-            .execute(&stmt, &[&i32::from(amount), &desc, &user_id])
-            .await
-            .unwrap();
-    }
-}
-
-struct TransactionCache {
-    re_conn: redis::aio::ConnectionManager,
-}
-
-impl TransactionCache {
-    const TRANSACTIONS_KEY: &'static str = "transactions";
-
-    fn key_fn(user_id: i32) -> CompactString {
-        let key = Self::TRANSACTIONS_KEY;
-        compact_str::format_compact!("{key}:{user_id}")
-    }
-
-    pub async fn get_latest_n(&self, n: i32) -> Vec<Transaction> {
-        let key = Self::key_fn(1);
-
-        let stream_result: StreamRangeReply = self
-            .re_conn
-            .clone()
-            .xrevrange_count(key.as_str(), "+", "-", n)
-            .await
-            .unwrap();
-
-        stream_result
-            .ids
-            .into_iter()
-            .flat_map(|v| v.map.into_iter())
-            .filter_map(|(_, val)| {
-                if let Value::Data(data) = val {
-                    let transaction = bitcode::deserialize::<Transaction>(&data).unwrap();
-                    Some(transaction)
-                } else {
-                    None
+                {
+                    // let guard = redis_lock.acquire().await.unwrap();
+                    trans_repo.save_and_get_balance(user, &transaction).await?;
+                    trans_cache
+                        .save_account(user, &acc, Some(&transaction))
+                        .await;
+                    // guard.release().await;
                 }
-            })
-            .collect::<Vec<Transaction>>()
-    }
 
-    pub async fn append(&self, user_id: i32, transaction: &Transaction) {
-        let serialized = bitcode::serialize(&transaction).unwrap();
-        let key = Self::key_fn(user_id);
-
-        self.re_conn
-            .clone()
-            .xadd(key.as_str(), "*", &[(user_id, serialized)])
-            .await
-            .unwrap()
+                Ok(())
+            }
+        }
     }
 }
