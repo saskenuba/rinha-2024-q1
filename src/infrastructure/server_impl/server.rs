@@ -7,7 +7,7 @@ use enum_map::{Enum, EnumMap};
 use httparse::{ParserConfig, Status};
 use memchr::memchr;
 use regex_lite::Regex;
-use strum::{EnumDiscriminants, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
+use strum::{EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
 use crate::api::{statement_route, transaction_route};
 use crate::application::ServerData;
@@ -115,7 +115,7 @@ fn parse_body(body: &[u8]) -> Option<&[u8]> {
 /// Won't handle anything else than a simple request.
 /// And probably explode if anything else than a well-formed request is parsed.
 pub fn parse_http(request: &[u8]) -> AnyResult<Request> {
-    let mut headers = [httparse::EMPTY_HEADER; 4];
+    let mut headers = [httparse::EMPTY_HEADER; 7];
     let mut req = httparse::Request::new(&mut headers);
     let body = ParserConfig::default()
         .parse_request(&mut req, request)
