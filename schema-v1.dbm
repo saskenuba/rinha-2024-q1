@@ -3,8 +3,9 @@
 CAUTION: Do not modify this file unless you know what you are doing.
  Unexpected results may occur if the code is changed deliberately.
 -->
-<dbmodel pgmodeler-ver="1.0.6" use-changelog="false" last-position="52,0" last-zoom="0.9" max-obj-count="4"
-	 default-schema="public" default-owner="postgres"
+<dbmodel pgmodeler-ver="1.1.0" use-changelog="false" max-obj-count="4"
+	 last-position="0,0" last-zoom="1"
+	 default-owner="postgres"
 	 layers="Default layer"
 	 active-layers="0"
 	 layer-name-colors="#000000"
@@ -13,7 +14,7 @@ CAUTION: Do not modify this file unless you know what you are doing.
 <database name="rinhabackend" encoding="UTF8" is-template="false" allow-conns="true">
 </database>
 
-<schema name="public" layers="0" fill-color="#e1e1e1" sql-disabled="true">
+<schema name="public" layers="0" fill-color="#e1e1e1" name-color="#000000" sql-disabled="true">
 </schema>
 
 <table name="account" layers="0" unlogged="true" collapse-mode="2" pagination="true" attribs-page="0" ext-attribs-page="0" max-obj-count="1" z-value="0">
@@ -46,11 +47,9 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	<customidxs object-type="column">
 		<object name="account_id" index="3"/>
 	</customidxs>
-
 	<customidxs object-type="constraint">
 		<object name="account_fk" index="0"/>
-	</customidxs>
-</table>
+	</customidxs></table>
 
 <relationship name="account_has_many_transaction" type="rel1n" layers="0"
 	 src-col-pattern="{st}_{sc}"
@@ -59,12 +58,16 @@ CAUTION: Do not modify this file unless you know what you are doing.
 	 custom-color="#8d5216"
 	 src-table="public.account"
 	 dst-table="public.transaction"
-	 src-required="false" dst-required="false"
+	 src-required="true" dst-required="false"
 	upd-action="CASCADE"
-	del-action="CASCADE"/>
+	del-action="CASCADE">
+	<label ref-type="name-label">
+		<position x="48.3731" y="-25.453"/>
+	</label>
+</relationship>
 
 <index name="idx_t_user" table="public.transaction"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
 	 index-type="hash" factor="0">
 		<idxelement use-sorting="false">
 			<column name="account_id"/>
@@ -72,31 +75,25 @@ CAUTION: Do not modify this file unless you know what you are doing.
 </index>
 
 <index name="idx_t_date" table="public.transaction"
-	 concurrent="false" unique="false" fast-update="false" buffering="false"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
 	 index-type="btree" factor="0">
 		<idxelement use-sorting="false">
 			<column name="created_on"/>
 		</idxelement>
 </index>
 
-<view name="running_balance" layers="0" collapse-mode="2" max-obj-count="3" z-value="0">
+<view name="running_balance" layers="0" collapse-mode="2" max-obj-count="0" z-value="0">
 	<schema name="public"/>
 	<role name="postgres"/>
-	<position x="594.444" y="357.778"/>
-	<reference>
-		<expression> <![CDATA[t.account_id AS account_id
-, sum(t.amount) AS balance]]> </expression>
-	</reference>
-	<reference>
-		<expression> <![CDATA[transaction t
-	INNER JOIN public.account acc ON acc.id = t.account_id]]> </expression>
-	</reference>
-	<reference>
-		<expression> <![CDATA[account_id]]> </expression>
-	</reference>
-	<expression type="select-exp">0</expression>
-	<expression type="from-exp">1</expression>
-	<expression type="end-exp">2</expression>
+	<position x="600" y="360"/>
+	<simplecol name="_expr0_" alias="_expr0_" type="text"/>
+	<definition> <![CDATA[SELECT
+   t.account_id AS account_id
+, sum(t.amount) AS balance
+FROM
+   transaction t
+	INNER JOIN public.account acc ON acc.id = t.account_id
+   account_id;;]]> </definition>
 </view>
 
 </dbmodel>
