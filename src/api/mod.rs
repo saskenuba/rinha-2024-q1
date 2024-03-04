@@ -1,15 +1,17 @@
-use crate::application::adapters::{StatementDTO, TransactionDTO};
-use crate::application::cache::AccountCache;
-use crate::application::repositories::TransactionRepository;
+use crate::application::adapters::{StatementDTO, TransactionDTO, TransactionResponseDTO};
+use crate::application::repositories::{HeedDB, TransactionLMDBRepository};
 use crate::application::ServerData;
 use crate::domain::account::Account;
 use crate::domain::transaction::Transaction;
+use crate::infrastructure::redis_lock::RedisLock;
 use crate::infrastructure::server_impl::request::Request;
 use crate::infrastructure::server_impl::response::{JsonResponse, Response, StatusCode};
 use crate::infrastructure::server_impl::server::Method;
 use crate::AnyResult;
 use eyre::bail;
 use fnv::FnvHashMap;
+use heed::Env;
+use redis::aio::ConnectionManager;
 use std::sync::{Arc, Mutex};
 
 pub mod input_types;
@@ -19,8 +21,6 @@ pub async fn statement_route(
     req: Request<'_>,
     client_id: i32,
 ) -> AnyResult<Response> {
-    // let body = req.body.unwrap();
-
     if req.method != Method::GET {
         bail!("Only GET available.")
     }
