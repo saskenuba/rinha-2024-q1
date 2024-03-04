@@ -7,10 +7,10 @@ use std::iter::repeat_with;
 #[derive(Clone)]
 pub struct RedisLock {
     rconn: ConnectionManager,
-    /// A random alphanumeric string
-    resource: CompactString,
     /// Value the lock is tied to
-    val: i32,
+    resource: i32,
+    /// A random alphanumeric string
+    value: CompactString,
     ttl_max: usize,
 }
 
@@ -27,25 +27,21 @@ impl<'a> RedisLockGuard<'a> {
 }
 
 impl RedisLock {
-    pub fn new(rconn: ConnectionManager, val: i32, ttl_max: usize) -> RedisLock {
-        let resource: CompactString = repeat_with(fastrand::alphanumeric).take(5).collect();
+    pub fn new(rconn: ConnectionManager, resource: i32, ttl_max: usize) -> RedisLock {
+        let lock_val: CompactString = repeat_with(fastrand::alphanumeric).take(10).collect();
 
         Self {
             rconn,
+            value: lock_val,
             resource,
-            val,
             ttl_max,
         }
     }
     pub async fn acquire(&self) -> Result<RedisLockGuard, ()> {
-        let mut retries = 0;
         loop {
-            if retries > 10 {
-                return Err(());
-            }
-
-            match lock(self.rconn.clone(), &self.resource, self.val, self.ttl_max).await {
+            match lock(self.rconn.clone(), self.resource, &self.value, self.ttl_max).await {
                 true => {
+                    eprintln!("got lock");
                     return Ok(RedisLockGuard {
                         lock: self,
                         bomb: DropBomb::new("RedisLockGuard must be released with release."),
@@ -53,20 +49,23 @@ impl RedisLock {
                 }
                 false => tokio::task::yield_now().await,
             };
-            retries += 1;
         }
     }
 
     async fn unlock(&self) -> Result<bool, ()> {
-        let res = drop_lock(self.rconn.clone(), &self.resource, self.val).await;
+        let res = drop_lock(self.rconn.clone(), self.resource, &self.value).await;
+        eprintln!(
+            "droppped lock for user: {}, resource: {}",
+            self.resource, self.value
+        );
         Ok(res)
     }
 }
 
 async fn lock(
     mut redis: impl ConnectionLike + AsyncCommands,
-    resource: &str,
-    val: i32,
+    resource: i32,
+    val: &str,
     ttl: usize,
 ) -> bool {
     let options = SetOptions::default()
@@ -77,13 +76,14 @@ async fn lock(
         .set_options::<_, _, Value>(resource, val, options)
         .await
         .unwrap();
+
     matches!(res, Value::Okay)
 }
 
 async fn drop_lock(
     mut conn: impl ConnectionLike + AsyncCommands,
-    resource: &str,
-    val: i32,
+    resource: i32,
+    val: &str,
 ) -> bool {
     let script = redis::Script::new(DROP_SCRIPT);
     let res = script
