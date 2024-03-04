@@ -112,3 +112,20 @@ impl From<Transaction> for TransactionDTO<'_> {
         }
     }
 }
+
+#[derive(Debug, Copy, Clone, Serialize)]
+pub struct TransactionResponseDTO {
+    #[serde(rename = "limite")]
+    credit_limit: u32,
+    #[serde(rename = "saldo")]
+    balance: i32,
+}
+
+impl From<Account> for TransactionResponseDTO {
+    fn from(value: Account) -> Self {
+        Self {
+            credit_limit: value.credit_limit,
+            balance: value.balance,
+        }
+    }
+}

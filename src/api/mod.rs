@@ -76,19 +76,18 @@ pub async fn transaction_route(
         re_conn: server_data.re_conn.clone(),
         lmdb_conn: server_data.lmdb_conn.clone(),
     };
+    let acc = bank_service.handler(command).await;
+    eprintln!("{:?}", acc);
+
+    let Ok(acc) = acc else {
+        return Ok(Response::from_status_code(
+            StatusCode::UnprocessableEntity,
+            None,
+        ));
     };
-    let res = bank_service.handler(command).await;
 
-    // if res.is_err() {
-    //     return Ok(Response::from_status_code(
-    //         StatusCode::UnprocessableEntity,
-    //         None,
-    //     ));
-    // }
-
-    let a =
-        JsonResponse::from::<TransactionDTO>(TransactionDTO::from(Transaction::generate(1, None)));
-    Ok(a.0)
+    let response = JsonResponse::from::<TransactionResponseDTO>(TransactionResponseDTO::from(acc));
+    Ok(response.0)
 }
 
 pub type AccountMapStorage = Arc<FnvHashMap<i32, (u32, Mutex<Account>)>>;
