@@ -1,4 +1,4 @@
-use heed::{DatabaseFlags, Env, EnvFlags, EnvOpenOptions};
+use heed::{Env, EnvOpenOptions};
 use listenfd::ListenFd;
 use redis::aio::ConnectionManager;
 use redis::Client;

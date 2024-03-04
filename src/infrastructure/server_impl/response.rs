@@ -6,8 +6,6 @@ use fnv::FnvHashMap;
 use serde::Serialize;
 use std::fmt::Write;
 use strum::{EnumMessage, EnumString, IntoStaticStr};
-use time::OffsetDateTime;
-
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoStaticStr, EnumString, EnumMessage)]
 pub enum StatusCode {

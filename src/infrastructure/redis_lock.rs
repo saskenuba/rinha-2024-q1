@@ -63,7 +63,7 @@ impl RedisLock {
 }
 
 async fn lock(
-    mut redis: impl ConnectionLike + AsyncCommands,
+    mut redis: impl AsyncCommands,
     resource: i32,
     val: &str,
     ttl: usize,
@@ -81,7 +81,7 @@ async fn lock(
 }
 
 async fn drop_lock(
-    mut conn: impl ConnectionLike + AsyncCommands,
+    mut conn: impl AsyncCommands,
     resource: i32,
     val: &str,
 ) -> bool {
