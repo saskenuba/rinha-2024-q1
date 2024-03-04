@@ -1,14 +1,14 @@
-use deadpool_postgres::{ManagerConfig, Pool, RecyclingMethod, Runtime};
+use heed::{DatabaseFlags, Env, EnvFlags, EnvOpenOptions};
 use listenfd::ListenFd;
 use redis::aio::ConnectionManager;
 use redis::Client;
-use rinha_de_backend::application::cache::AccountCache;
-use rinha_de_backend::application::repositories::TransactionRepository;
+use rinha_de_backend::application::repositories::{HeedDB, TransactionLMDBRepository};
 use rinha_de_backend::application::ServerData;
+use rinha_de_backend::domain::account::Account;
 use rinha_de_backend::infrastructure::server_impl::server::{match_routes, parse_http};
+use rinha_de_backend::AnyResult;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio_postgres::NoTls;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -18,33 +18,38 @@ async fn main() {
     run().await
 }
 
-async fn setup_pgsql() -> Pool {
-    let mut cfg = deadpool_postgres::Config::new();
-    cfg.dbname = Some("rinhabackend".to_string());
-    cfg.host = Some("localhost".to_string());
-    cfg.user = Some("postgres".to_string());
-    // cfg.password = "inha";
-    cfg.manager = Some(ManagerConfig {
-        recycling_method: RecyclingMethod::Fast,
-    });
+fn setup_lmdb() -> (Env, HeedDB) {
+    let env = EnvOpenOptions::new().max_dbs(10).open("/tmp").unwrap();
 
-    cfg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap()
+    let mut rwtx = env.write_txn().unwrap();
+    let db = env
+        .database_options()
+        .name("rinha.lmdb")
+        .types()
+        .create(&mut rwtx)
+        .unwrap();
+    db.clear(&mut rwtx).unwrap();
+    rwtx.commit().unwrap();
+
+    let repo = TransactionLMDBRepository {
+        db: (env.clone(), db),
+    };
+    [
+        Account::new(1, 100000),
+        Account::new(2, 80000),
+        Account::new(3, 1000000),
+        Account::new(4, 10000000),
+        Account::new(5, 500000),
+    ]
+    .iter()
+    .for_each(|c| repo.save_account(c));
+
+    (env, db)
 }
 
-async fn setup_redis(pool: &Pool) -> ConnectionManager {
-    let conn = ConnectionManager::new(Client::open("redis://localhost:6379").unwrap())
-        .await
-        .unwrap();
-
-    let repo = TransactionRepository { conn: pool.clone() };
-
-    let cache = AccountCache {
-        re_conn: conn.clone(),
-    };
-    for acc in repo.get_accounts().await {
-        cache.save_account(acc.id, &acc, None).await;
-    }
-    conn
+async fn setup_redis() -> AnyResult<ConnectionManager> {
+    let conn = ConnectionManager::new(Client::open("redis://localhost:6379")?).await?;
+    Ok(conn)
 }
 
 async fn run() {
@@ -59,10 +64,11 @@ async fn run() {
         TcpListener::bind("localhost:1337").await.unwrap()
     };
 
-    let pg_pool = setup_pgsql().await;
-    let re_conn = setup_redis(&pg_pool).await;
-
-    let data = ServerData { re_conn, pg_pool };
+    let re_conn = setup_redis().await.unwrap();
+    let data = ServerData {
+        re_conn,
+        lmdb_conn: setup_lmdb(),
+    };
 
     println!("Server is running!");
 

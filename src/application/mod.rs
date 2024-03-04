@@ -2,10 +2,11 @@ pub mod adapters;
 pub mod cache;
 pub mod repositories;
 
-use deadpool_postgres::Pool;
+use crate::application::repositories::HeedDB;
+use heed::Env;
 
 #[derive(Clone)]
 pub struct ServerData {
     pub re_conn: redis::aio::ConnectionManager,
-    pub pg_pool: Pool,
+    pub lmdb_conn: (Env, HeedDB),
 }

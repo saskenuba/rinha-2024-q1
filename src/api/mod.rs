@@ -27,7 +27,7 @@ pub async fn statement_route(
 
     let service = BankAccountService {
         re_conn: server_data.re_conn.clone(),
-        pg_conn: server_data.pg_pool.clone(),
+        lmdb_conn: server_data.lmdb_conn.clone(),
     };
 
     let res = service
@@ -67,22 +67,6 @@ pub async fn transaction_route(
         }
     };
 
-    // read model
-    // - read last 10 transactions and balance from redis
-
-    // write model
-    // * debit *
-    // take lock    -> persist to database
-    //              -> insert transaction and get balance
-    //              -> insert transaction and balance on redis
-    //              -> remove lock
-
-    // * credit *
-    // take lock    -> persist to database
-    //              -> insert transaction and get balance
-    //              -> insert transaction and balance on redis
-    //              -> remove lock
-
     let command = AccountCommands::HandleMoney {
         account: client_id,
         transaction,
@@ -90,7 +74,8 @@ pub async fn transaction_route(
 
     let bank_service = BankAccountService {
         re_conn: server_data.re_conn.clone(),
-        pg_conn: server_data.pg_pool.clone(),
+        lmdb_conn: server_data.lmdb_conn.clone(),
+    };
     };
     let res = bank_service.handler(command).await;
 
@@ -109,9 +94,8 @@ pub async fn transaction_route(
 pub type AccountMapStorage = Arc<FnvHashMap<i32, (u32, Mutex<Account>)>>;
 
 struct BankAccountService {
-    re_conn: redis::aio::ConnectionManager,
-    pg_conn: deadpool_postgres::Pool,
-    // storage: AccountMapStorage,
+    re_conn: ConnectionManager,
+    lmdb_conn: (Env, HeedDB),
 }
 
 #[derive(Debug)]
@@ -131,46 +115,41 @@ impl BankAccountService {
     async fn query(&self, command: AccountQueries) -> (Account, impl Iterator<Item = Transaction>) {
         match command {
             AccountQueries::Statement { account: user } => {
-                let trans_cache = AccountCache {
-                    re_conn: self.re_conn.clone(),
+                let trans_repo = TransactionLMDBRepository {
+                    db: self.lmdb_conn.clone(),
                 };
 
-                let res = trans_cache.get_account(user, true).await;
-                (res.0, res.1.unwrap())
+                let acc = trans_repo.get_account(user).unwrap();
+                let trans = trans_repo.get_last_10(user);
+                (acc, trans.into_iter())
             }
         }
     }
-    async fn handler(&self, command: AccountCommands) -> AnyResult<()> {
+    async fn handler(&self, command: AccountCommands) -> AnyResult<Account> {
         match command {
             AccountCommands::HandleMoney {
                 account: user,
                 transaction,
             } => {
-                let trans_repo = TransactionRepository {
-                    conn: self.pg_conn.clone(),
+                let trans_repo = TransactionLMDBRepository {
+                    db: self.lmdb_conn.clone(),
                 };
 
-                let trans_cache = AccountCache {
-                    re_conn: self.re_conn.clone(),
+                let redis_lock = RedisLock::new(self.re_conn.clone(), user, 300);
+                let acc = {
+                    let guard = redis_lock.acquire().await.unwrap();
+
+                    let acc = trans_repo.get_account(user)?;
+                    let acc = acc
+                        .add_transaction(&transaction)
+                        .or_else(|_| bail!("no credits bro"))?;
+                    trans_repo.save_transaction(&acc, transaction);
+
+                    guard.release().await;
+                    acc
                 };
 
-                // let redis_lock = RedisLock::new(self.re_conn.clone(), user, 100);
-
-                let (acc, _) = trans_cache.get_account(user, false).await;
-                let acc = acc
-                    .add_transaction(&transaction)
-                    .or_else(|_| bail!("no credits bro"))?;
-
-                {
-                    // let guard = redis_lock.acquire().await.unwrap();
-                    trans_repo.save_and_get_balance(user, &transaction).await?;
-                    trans_cache
-                        .save_account(user, &acc, Some(&transaction))
-                        .await;
-                    // guard.release().await;
-                }
-
-                Ok(())
+                Ok(acc)
             }
         }
     }
