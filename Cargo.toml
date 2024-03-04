@@ -24,6 +24,7 @@ tokio = { version = "^1", features = ["full"] }
 deadpool-postgres = "^0.12"
 redis = { version = "0.24", features = ["ahash", "tokio-comp", "connection-manager"] }
 tokio-postgres = "^0.7"
+heed = { version = "0.20.0-alpha.9", features = ["serde-bincode"] }
 
 # json-parsing
 serde = { version = "^1", features = ["derive"] }
