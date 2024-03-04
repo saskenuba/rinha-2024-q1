@@ -6,6 +6,7 @@ use fnv::FnvHashMap;
 use serde::Serialize;
 use std::fmt::Write;
 use strum::{EnumMessage, EnumString, IntoStaticStr};
+use time::OffsetDateTime;
 
 #[allow(clippy::upper_case_acronyms, non_camel_case_types)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoStaticStr, EnumString, EnumMessage)]
@@ -45,6 +46,7 @@ impl Response {
         write!(
             buf,
             "HTTP/1.1 {status_code} {status_message}\r\n\
+             Date: Sun, 06 Nov 1994 08:49:37\r\n\
              Server: localhost\r\n"
         )
         .expect("No reason to fail.");
@@ -59,8 +61,8 @@ impl Response {
             )
             .unwrap();
         } else {
-            write!(buf, "Connection: close\r\n").unwrap();
-        }
+            write!(buf, "Content-Length: 0\r\n\r\n").unwrap()
+        };
 
         buf.into()
     }
