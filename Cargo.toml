@@ -21,9 +21,7 @@ time = { version = "^0.3", features = ["serde", "formatting"] }
 tokio = { version = "^1", features = ["full"] }
 
 # databasey
-deadpool-postgres = "^0.12"
 redis = { version = "0.24", features = ["ahash", "tokio-comp", "connection-manager"] }
-tokio-postgres = "^0.7"
 heed = { version = "0.20.0-alpha.9", features = ["serde-bincode"] }
 
 # json-parsing
@@ -45,9 +43,6 @@ httparse = "1.8"
 memchr = "^2"
 unicase = "2.7.0"
 
-# other
-console-subscriber = "0.2"
-
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 
@@ -55,6 +50,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "http_parse"
 harness = false
 
-[profile.release]
-debug = true
-strip = false
+#[profile.release]
+#debug = true
+#strip = false
