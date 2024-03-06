@@ -1,17 +1,26 @@
 version: "3.5"
 name: "rinha-de-backend"
 
-volumes:
-  postgres-storage:
 
 services:
+
+  # Temporary busybox container to set correct permissions to shared socket folder
+  tmp:
+    image: busybox
+    command: sh -c "mkdir /tmp/docker && chown -R 33:33 /tmp/docker/ && chmod -R 770 /tmp/docker/"
+    volumes:
+      - /tmp/docker/
 
   load-balancer:
     image: nginx:latest
     hostname: nginx
+#    user: "1000:33"
     volumes:
-      - config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+    volumes_from:
+      - tmp
     depends_on:
+      - tmp
       - sv-01
       - sv-02
     privileged: true
@@ -21,47 +30,43 @@ services:
       resources:
         limits:
           cpus: "0.2"
-          memory: "50MB"
+          memory: "100MB"
 
   sv-01: &server-base
+    hostname: sv-01
+#    user: "1000:33"
     build: .
     expose:
-      - "80"
-    volumes:
-      - postgres-storage:/var/run/postgresql
+      - "8080"
+    environment:
+      - LMDB_PATH=/tmp
+    depends_on:
+      - tmp
+      - redis
+    volumes_from:
+      - tmp
     deploy:
       resources:
         limits:
-          cpus: "0.25"
-          memory: "50MB"
+          cpus: "0.5"
+          memory: "175MB"
 
   sv-02:
+    hostname: sv-02
     <<: *server-base
 
-  db:
-    image: postgres:latest
-    hostname: db
-    environment:
-      POSTGRES_USER: rinha
-      POSTGRES_PASSWORD: inha
-      POSTGRES_DB: rinhadb
-    ports:
-      - "12345:5432"
+  redis:
+    image: redis:latest
+    command: redis-server /etc/redis.conf
     volumes:
-      - postgres-storage:/var/run/postgresql
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready" ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+      - ./config/redis.conf:/etc/redis.conf:ro
+    volumes_from:
+      - tmp
     deploy:
       resources:
         limits:
-          cpus: "0.8"
-          memory: "400mb"
+          cpus: "0.3"
+          memory: "100MB"
 
-networks:
-  default:
-    driver: bridge
-    name: rinha-proxy
+volumes:
+  lmdb-volume:
