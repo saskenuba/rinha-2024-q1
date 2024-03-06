@@ -7,8 +7,9 @@ use rinha_de_backend::application::ServerData;
 use rinha_de_backend::domain::account::Account;
 use rinha_de_backend::infrastructure::server_impl::server::{match_routes, parse_http};
 use rinha_de_backend::AnyResult;
+use std::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, UnixListener};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -48,33 +49,34 @@ fn setup_lmdb() -> (Env, HeedDB) {
 }
 
 async fn setup_redis() -> AnyResult<ConnectionManager> {
-    let conn = ConnectionManager::new(Client::open("redis://localhost:6379")?).await?;
+    let conn = ConnectionManager::new(Client::open("unix:////tmp/docker/redis.sock")?).await?;
     Ok(conn)
 }
 
 async fn run() {
-    console_subscriber::init();
+    // let mut listenfd = ListenFd::from_env();
+    // let socket = if let Some(listener) = listenfd.take_tcp_listener(0).unwrap() {
+    //     listener.set_nonblocking(true).unwrap();
+    //     // UnixListener::from_std(listener).unwrap()
+    //     TcpListener::from_std(listener).unwrap()
+    // } else {
+    // };
+    // let socket = TcpListener::bind("localhost:8080").await.unwrap();
+    let socket_path = format!("/tmp/docker/{}.sock", std::env::var("HOSTNAME").unwrap());
 
-    let mut listenfd = ListenFd::from_env();
-    let socket = if let Some(listener) = listenfd.take_tcp_listener(0).unwrap() {
-        listener.set_nonblocking(true).unwrap();
-        // UnixListener::from_std(listener).unwrap()
-        TcpListener::from_std(listener).unwrap()
-    } else {
-        TcpListener::bind("localhost:1337").await.unwrap()
-    };
+    // remove old sock if exists
+    fs::remove_file(&socket_path).ok();
 
+    let socket = UnixListener::bind(socket_path).unwrap();
+
+    let lmdb_conn = setup_lmdb();
     let re_conn = setup_redis().await.unwrap();
-    let data = ServerData {
-        re_conn,
-        lmdb_conn: setup_lmdb(),
-    };
+    let data = ServerData { re_conn, lmdb_conn };
 
     println!("Server is running!");
-
     loop {
         let (mut stream, _) = socket.accept().await.unwrap();
-        stream.set_nodelay(true).unwrap();
+        // stream.set_nodelay(true).unwrap();
 
         let data = data.clone();
         tokio::spawn(async move {
