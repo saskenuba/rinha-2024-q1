@@ -1,11 +1,10 @@
 use crate::domain::errors::AccountError;
 use crate::domain::transaction::Transaction;
 use serde::{Deserialize, Serialize};
+use zerocopy_derive::{FromBytes, IntoBytes, KnownLayout, NoCell};
 
-/// Aggregate
-///
-/// Don't store the balance on the aggregate you dummkopf!
-#[derive(Debug, Deserialize, Serialize)]
+#[repr(C)]
+#[derive(Debug, FromBytes, IntoBytes, NoCell, KnownLayout, Deserialize, Serialize)]
 pub struct Account {
     pub id: i32,
     pub balance: i32,

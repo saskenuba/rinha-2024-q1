@@ -98,6 +98,7 @@ impl From<Transaction> for TransactionDTO<'_> {
         let kind = match value.tipo {
             TransactionKind::Debit => "d",
             TransactionKind::Credit => "c",
+            _ => unreachable!(),
         };
 
         let description = value.descricao.0.into();
