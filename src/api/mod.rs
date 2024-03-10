@@ -1,17 +1,14 @@
 use crate::application::adapters::{StatementDTO, TransactionDTO, TransactionResponseDTO};
-use crate::application::repositories::{HeedDB, TransactionLMDBRepository};
 use crate::application::ServerData;
 use crate::domain::account::Account;
 use crate::domain::transaction::Transaction;
-use crate::infrastructure::redis_lock::RedisLock;
 use crate::infrastructure::server_impl::request::Request;
 use crate::infrastructure::server_impl::response::{JsonResponse, Response, StatusCode};
 use crate::infrastructure::server_impl::server::Method;
+use crate::infrastructure::TransactionIPCRepository;
 use crate::AnyResult;
 use eyre::bail;
 use fnv::FnvHashMap;
-use heed::Env;
-use redis::aio::ConnectionManager;
 use std::sync::{Arc, Mutex};
 
 pub mod input_types;
@@ -26,8 +23,7 @@ pub async fn statement_route(
     }
 
     let service = BankAccountService {
-        re_conn: server_data.re_conn.clone(),
-        lmdb_conn: server_data.lmdb_conn.clone(),
+        ipc_repo: server_data.ipc_repo.clone(),
     };
 
     let res = service
@@ -73,13 +69,10 @@ pub async fn transaction_route(
     };
 
     let bank_service = BankAccountService {
-        re_conn: server_data.re_conn.clone(),
-        lmdb_conn: server_data.lmdb_conn.clone(),
+        ipc_repo: server_data.ipc_repo.clone(),
     };
-    let acc = bank_service.handler(command).await;
-    eprintln!("{:?}", acc);
 
-    let Ok(acc) = acc else {
+    let Ok(acc) = bank_service.handler(command).await else {
         return Ok(Response::from_status_code(
             StatusCode::UnprocessableEntity,
             None,
@@ -93,8 +86,7 @@ pub async fn transaction_route(
 pub type AccountMapStorage = Arc<FnvHashMap<i32, (u32, Mutex<Account>)>>;
 
 struct BankAccountService {
-    re_conn: ConnectionManager,
-    lmdb_conn: (Env, HeedDB),
+    ipc_repo: TransactionIPCRepository,
 }
 
 #[derive(Debug)]
@@ -113,38 +105,32 @@ enum AccountQueries {
 impl BankAccountService {
     async fn query(&self, command: AccountQueries) -> (Account, impl Iterator<Item = Transaction>) {
         match command {
-            AccountQueries::Statement { account: user } => {
-                let trans_repo = TransactionLMDBRepository {
-                    db: self.lmdb_conn.clone(),
-                };
-
-                let acc = trans_repo.get_account(user).unwrap();
-                let trans = trans_repo.get_last_10(user);
+            AccountQueries::Statement { account: user } => unsafe {
+                let (acc, trans) = self.ipc_repo.get_acc_and_transactions(user);
                 (acc, trans.into_iter())
-            }
+            },
         }
     }
+
     async fn handler(&self, command: AccountCommands) -> AnyResult<Account> {
         match command {
             AccountCommands::HandleMoney {
                 account: user,
                 transaction,
             } => {
-                let trans_repo = TransactionLMDBRepository {
-                    db: self.lmdb_conn.clone(),
-                };
+                let acc = unsafe {
+                    // guard resource
+                    let guard = self.ipc_repo.lock_account_resources(user).await;
 
-                let redis_lock = RedisLock::new(self.re_conn.clone(), user, 300);
-                let acc = {
-                    let guard = redis_lock.acquire().await.unwrap();
-
-                    let acc = trans_repo.get_account(user)?;
+                    let (acc, _) = self.ipc_repo.get_acc_and_transactions(user);
                     let acc = acc
                         .add_transaction(&transaction)
                         .or_else(|_| bail!("no credits bro"))?;
-                    trans_repo.save_transaction(&acc, transaction);
+                    self.ipc_repo.add_transaction(&acc, &transaction);
 
-                    guard.release().await;
+                    // remove guard
+                    self.ipc_repo.unlock(guard, user);
+
                     acc
                 };
 
