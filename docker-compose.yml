@@ -7,14 +7,13 @@ services:
   # Temporary busybox container to set correct permissions to shared socket folder
   tmp:
     image: busybox
-    command: sh -c "mkdir /tmp/docker && chown -R 33:33 /tmp/docker/ && chmod -R 770 /tmp/docker/"
+    command: sh -c "rm -rf /tmp/docker/* && mkdir /tmp/docker && chmod -R a+rwx /tmp/docker/"
     volumes:
       - /tmp/docker/
 
   load-balancer:
     image: nginx:latest
     hostname: nginx
-#    user: "1000:33"
     volumes:
       - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
     volumes_from:
