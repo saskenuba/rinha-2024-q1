@@ -87,19 +87,16 @@ impl TransactionIPCRepository {
 
         let futex: &Futex<Shared> = is_lock_atomic.as_futex();
 
-        loop {
-            match is_lock_atomic.compare_exchange_weak(NO_LOCK, HAS_LOCK, SeqCst, SeqCst) {
-                Ok(_) => break,
-                Err(_) => {
-                    // don't block the executor and send a signal
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    tokio::spawn(async move {
-                        futex.wait(NO_LOCK);
-                        tx.send(())
-                    });
-                    rx.await.unwrap();
-                    println!("wakened..");
-                }
+        let mut c = is_lock_atomic
+            .compare_exchange(0, 1, SeqCst, SeqCst)
+            .unwrap_or_else(|e| e);
+        if c != 0 {
+            if c != 2 {
+                c = is_lock_atomic.swap(2, SeqCst);
+            }
+            while c != 0 {
+                futex.wait(2);
+                c = is_lock_atomic.swap(2, SeqCst);
             }
         }
 
@@ -124,11 +121,10 @@ impl TransactionIPCRepository {
         let is_lock_atomic = is_locked.as_ref().unwrap();
         let readers_atomic = is_accessing.as_ref().unwrap();
 
-        is_lock_atomic.store(NO_LOCK, SeqCst);
-        readers_atomic.fetch_sub(1, SeqCst);
-
-        futex.wake(1);
-        println!("tarefa intensa finalizou..");
+        if is_lock_atomic.fetch_sub(1, SeqCst) != 1 {
+            is_lock_atomic.store(0, SeqCst);
+            futex.wake(1);
+        }
     }
 
     fn setup_files() -> MmapRaw {
