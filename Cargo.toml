@@ -6,9 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitcode = { version = "0.5.1", features = ["serde"] }
 bytes = "^1.5"
-derive_more = { version = "1.0.0-beta.6", features = ["deref"] }
+derive_more = { version = "1.0.0-beta.6", features = ["deref", "deref_mut"] }
 either = "1.10.0"
 eyre = "0.6.12"
 fastrand = "2"
@@ -16,13 +15,17 @@ futures = "0.3.30"
 futures-util = "0.3.30"
 listenfd = "^1"
 regex-lite = "0.1"
+parking_lot = { version = "0.12.1", features = [] }
 strum = { version = "0.26", features = ["derive"] }
 time = { version = "^0.3", features = ["serde", "formatting"] }
 tokio = { version = "^1", features = ["full"] }
+zerocopy = { version = "0.8.0-alpha.7", features = ["simd"] }
+zerocopy-derive = "0.8.0-alpha.7"
 
-# databasey
-redis = { version = "0.24", features = ["ahash", "tokio-comp", "connection-manager"] }
-heed = { version = "0.20.0-alpha.9", features = ["serde-bincode"] }
+# shared memory
+memmap2 = "0.9.4"
+shared_memory = "0.12.4"
+linux-futex = "0.2"
 
 # json-parsing
 serde = { version = "^1", features = ["derive"] }
@@ -34,7 +37,6 @@ ahash = "0.8.9"
 compact_str = { version = "0.8.0-beta", features = ["serde"] }
 enum-map = "3.0.0-beta.2"
 fnv = "^1"
-drop_bomb = "0.1.5"
 mimalloc = { version = "0.1", default-features = false }
 
 # server impl
@@ -49,7 +51,3 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "http_parse"
 harness = false
-
-#[profile.release]
-#debug = true
-#strip = false
