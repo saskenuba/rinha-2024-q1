@@ -3,8 +3,11 @@ use rinha_de_backend::application::ServerData;
 use rinha_de_backend::domain::account::Account;
 use rinha_de_backend::infrastructure::server_impl::server::{match_routes, parse_http};
 use rinha_de_backend::infrastructure::TransactionIPCRepository;
+use std::fs;
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, UnixListener};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -33,19 +36,22 @@ pub fn setup_ipcdb() -> TransactionIPCRepository {
 
 async fn run() {
     let mut listenfd = ListenFd::from_env();
-    let socket = if let Some(listener) = listenfd.take_tcp_listener(0).unwrap() {
+    let socket = if let Some(listener) = listenfd.take_unix_listener(0).unwrap() {
         listener.set_nonblocking(true).unwrap();
-        // UnixListener::from_std(listener).unwrap()
-        TcpListener::from_std(listener).unwrap()
+        UnixListener::from_std(listener).unwrap()
+        // TcpListener::from_std(listener).unwrap()
     } else {
-        let socket = TcpListener::bind("localhost:8080").await.unwrap();
+        let socket_path = std::env::var("HOSTNAME")
+            .map(|host| format!("/tmp/docker/{host}.sock"))
+            .unwrap_or("/tmp/uepa.sock".to_string());
+        let socket = UnixListener::bind(&socket_path).unwrap();
+
+        let mut perm = fs::metadata(&socket_path).unwrap().permissions();
+        perm.set_mode(0o777);
+        fs::set_permissions(socket_path, perm).unwrap();
+
         socket
     };
-    // let socket_path = format!("/tmp/docker/{}.sock", std::env::var("HOSTNAME").unwrap());
-
-    // remove old sock if exists
-    // fs::remove_file(&socket_path).ok();
-    // let socket = UnixListener::bind(socket_path).unwrap();
 
     let data = ServerData {
         ipc_repo: setup_ipcdb(),
@@ -82,7 +88,6 @@ async fn run() {
                     response.unwrap_right()
                 };
                 stream.write_all(&response.into_http()).await.unwrap();
-                // stream.shutdown().await.unwrap();
             }
         });
     }
