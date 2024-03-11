@@ -13,6 +13,8 @@ pub enum StatusCode {
     Ok,
     #[strum(serialize = "404", message = "Not Found.")]
     NotFound,
+    #[strum(serialize = "405", message = "Vaza!")]
+    MethodNotAllowed,
     #[strum(serialize = "422", message = "Stop with this shit.")]
     UnprocessableEntity,
 }

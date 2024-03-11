@@ -22,7 +22,17 @@ pub async fn statement_route(
     client_id: i32,
 ) -> AnyResult<Response> {
     if req.method != Method::GET {
-        bail!("Only GET available.")
+        return Ok(Response::from_status_code(
+            StatusCode::MethodNotAllowed,
+            "Somente GET.".to_string(),
+        ));
+    }
+
+    if !(1..=5).contains(&client_id) {
+        return Ok(Response::from_status_code(
+            StatusCode::NotFound,
+            "user-not-found".to_string(),
+        ));
     }
 
     let service = BankAccountService {
@@ -44,8 +54,17 @@ pub async fn transaction_route(
     client_id: i32,
 ) -> AnyResult<Response> {
     if req.method != Method::POST {
-        eprintln!("body needed.");
-        bail!("Only POST available.");
+        return Ok(Response::from_status_code(
+            StatusCode::MethodNotAllowed,
+            "Somente POST.".to_string(),
+        ));
+    }
+
+    if !(1..=5).contains(&client_id) {
+        return Ok(Response::from_status_code(
+            StatusCode::NotFound,
+            "user-not-found".to_string(),
+        ));
     }
 
     let body = req
@@ -77,7 +96,6 @@ pub async fn transaction_route(
         lmdb_conn: server_data.lmdb_conn.clone(),
     };
     let acc = bank_service.handler(command).await;
-    eprintln!("{:?}", acc);
 
     let Ok(acc) = acc else {
         return Ok(Response::from_status_code(
