@@ -7,14 +7,13 @@ services:
   # Temporary busybox container to set correct permissions to shared socket folder
   tmp:
     image: busybox
-    command: sh -c "mkdir /tmp/docker && chown -R 33:33 /tmp/docker/ && chmod -R 770 /tmp/docker/"
+    command: sh -c "mkdir /tmp/docker && rm -rf /tmp/docker/* && chmod -R 777 /tmp/docker/"
     volumes:
       - /tmp/docker/
 
   load-balancer:
     image: nginx:latest
     hostname: nginx
-#    user: "1000:33"
     volumes:
       - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
     volumes_from:
@@ -34,12 +33,12 @@ services:
 
   sv-01: &server-base
     hostname: sv-01
-#    user: "1000:33"
     build: .
+    ipc: host
     expose:
       - "8080"
-    environment:
-      - LMDB_PATH=/tmp
+    volumes:
+      - db-volume:/db
     depends_on:
       - tmp
       - redis
@@ -49,7 +48,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: "175MB"
+          memory: "200MB"
 
   sv-02:
     hostname: sv-02
@@ -66,7 +65,7 @@ services:
       resources:
         limits:
           cpus: "0.3"
-          memory: "100MB"
+          memory: "50MB"
 
 volumes:
-  lmdb-volume:
+  db-volume:
