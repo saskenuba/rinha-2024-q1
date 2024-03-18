@@ -1,0 +1,1 @@
+API with LMDB database. Uses a single database file with ranges for each user, enabling fine grained concurrent access. LMDB locking is disabled and instead we use redis as a distributed locking mechanism.
